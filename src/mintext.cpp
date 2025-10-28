@@ -4,6 +4,7 @@
 #include <cstdio> 
 #include <cstdlib> 
 #include <conio.h> 
+#include <windows.h>
 
 // Global variables
 std::vector<std::string> lines = {""};
@@ -18,6 +19,8 @@ void unset_raw_mode();
 std::string get_key();
 void render_editor();
 void save_file();
+void overwrite_file();
+void statusbar();
 void handle_key(const std::string& key);
 std::vector<std::vector<std::string>> undo_history;
 std::vector<std::vector<std::string>> redo_history;
@@ -33,6 +36,23 @@ void set_raw_mode() {
 
 void unset_raw_mode() {
 
+}
+void statusbar() { 
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(hConsole, &csbi);
+    COORD originalPos = csbi.dwCursorPosition;
+    COORD bottomLeft;
+    bottomLeft.X = 0;
+    bottomLeft.Y = csbi.srWindow.Bottom;
+    SetConsoleCursorPosition(hConsole, bottomLeft);      
+    std::cout << "\033[7m '" << filename << "' X: '" << cursor_x << "' Y: '" << cursor_y << "' Ln: '" << lines.size() << "' ";    
+    std::cout << "\033[0m";
+    SetConsoleCursorPosition(hConsole, originalPos);
+} 
+
+void set_window_name(const std::string& new_title) {
+    SetConsoleTitleA(new_title.c_str());
 }
 
 std::string get_key() {
@@ -54,7 +74,8 @@ std::string get_key() {
     else if (key == 13) return "ENTER"; 
     else if (key== 19) return "CTRL_S"; 
     else if (key == 26) return "CTRL_Z";    
-    else if (key == 25) return "CTRL_Y";   
+    else if (key == 25) return "CTRL_Y";  
+    else if (key == 15) return "CTRL_O";
     else return std::string(1, static_cast<char>(key));
 }
 
@@ -63,10 +84,13 @@ void render_editor() {
 
     for (int i = 0; i < lines.size(); ++i) {
         printf("%4d %s\r\n", i + 1, lines[i].c_str());
-    }
-
-    printf("\033[%d;%dH", cursor_y + 1, cursor_x + 1 + 5); 
-    fflush(stdout); 
+    }  
+    statusbar();
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    COORD pos;
+    pos.X = cursor_x + 5;
+    pos.Y = cursor_y;  
+    SetConsoleCursorPosition(hConsole, pos);  
 }
 
 void record_state() {
@@ -129,7 +153,7 @@ void save_file() {
     } else {
         std::cout << "\nError saving file: Could not open file.";
     }
-    std::cout.flush();
+    std::cout.flush();    
     get_key(); 
     set_raw_mode();
     clear_screen();
@@ -179,11 +203,33 @@ void load_file(const std::string& file_to_load) {
     get_key(); 
     set_raw_mode();
     clear_screen();
+    set_window_name(filename);
     render_editor();    
 }
 
+void overwrite_file() {
+    if (filename == "untitled.txt") {
+        save_file();
+        return;
+    }
+    FILE* file = fopen(filename.c_str(), "w"); 
+    if (file) {  
+        for (const auto& line : lines) {
+            fprintf(file, "%s\n", line.c_str());
+        }
+        fclose(file);
+        std::cout << "\033[30;1H\033[K\033[7mSAVED: " << filename << "\033[0m" << std::endl;
+        fflush(stdout);        
+    } else {
+        std::cout << "\033[30;1H\033[K\033[7mERROR SAVING: " << filename << "\033[0m" << std::endl;
+        fflush(stdout);
+    }
+}
+
+
+
 void handle_key(const std::string& key) {  
-    if (key != "UP" && key != "DOWN" && key != "LEFT" && key != "RIGHT" && key != "CTRL_Z" && key != "CTRL_Y" && key != "END" && key != "CTRL_Q") {
+    if (key != "UP" && key != "DOWN" && key != "LEFT" && key != "RIGHT" && key != "CTRL_Z" && key != "CTRL_Y" && key != "END" && key != "CTRL_Q" && key != "CTRL_O") {
         record_state();
     }  
     if (lines.empty()) {
@@ -197,30 +243,30 @@ void handle_key(const std::string& key) {
     std::string& current_line_content = lines[cursor_y];
     cursor_x = std::max(0, std::min(cursor_x, (int)current_line_content.length()));
 
-    if (key == "UP") {
+    if (key == "UP") {        
         if (cursor_y > 0) {
             cursor_y--;
             cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
-        }
-    } else if (key == "DOWN") {
-        if (cursor_y < lines.size() - 1) {
+        }        
+    } else if (key == "DOWN") {        
+        if (cursor_y < lines.size() - 1) {            
             cursor_y++;
             cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
-        }
-    } else if (key == "LEFT") {
+        }        
+    } else if (key == "LEFT") {        
         if (cursor_x > 0) {
             cursor_x--;
         } else if (cursor_y > 0) {
             cursor_y--;
             cursor_x = lines[cursor_y].length();
-        }
-    } else if (key == "RIGHT") {
+        }       
+    } else if (key == "RIGHT") {        
         if (cursor_x < current_line_content.length()) {
             cursor_x++;
         } else if (cursor_y < lines.size() - 1) {
             cursor_y++;
             cursor_x = 0;
-        }
+        }        
     } else if (key == "ENTER") {
         std::string part_after_cursor = current_line_content.substr(cursor_x);
         current_line_content = current_line_content.substr(0, cursor_x);
@@ -281,6 +327,9 @@ void handle_key(const std::string& key) {
     } else if (key == "CTRL_Y") 
     {
         redo();
+    } else if (key == "CTRL_O") 
+    {
+        overwrite_file();
     } 
 
     cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
@@ -290,7 +339,7 @@ void print(const std::string& str) { // im not dealing with std::cout spams in h
     std::cout << str << std::endl;
 };
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {    
     if (argc > 1) {
         filename = argv[1];
         if (filename == "-help" || filename == "--h") {
@@ -303,7 +352,12 @@ int main(int argc, char *argv[]) {
             print("End: Save");
             print("Backspace and Delete: Delete a key");
             print("Arrow Keys: Move cursor");
+            print("Ctrl+Z: Undo");
+            print("Ctrl+Y: Redo");
+            print("Ctrl+O: Overwrite");
             return 0;
+        } else if (filename == "") // Do nothing if not loading file
+        {
         } else {
         load_file(filename);
         };
