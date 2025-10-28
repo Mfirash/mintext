@@ -91,6 +91,7 @@ void render_editor() {
     pos.X = cursor_x + 5;
     pos.Y = cursor_y;  
     SetConsoleCursorPosition(hConsole, pos);  
+    statusbar();
 }
 
 void record_state() {
@@ -388,3 +389,4 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
