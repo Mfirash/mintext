@@ -1,1 +1,1 @@
-E:\msys2\mingw64\bin\g++.exe -fdiagnostics-color=always -g "C:\Users\PC\Desktop\FIRASH\New folder (2)\mintext\src\New folder\mintext.cpp" "C:\Users\PC\Desktop\FIRASH\New folder (2)\mintext\src\New folder\mintextcore.cpp" -o "C:\Users\PC\Desktop\FIRASH\New folder (2)\mintext\src\New folder\mintext.exe"
+g++.exe -fdiagnostics-color=always -g "mintext.cpp" "mintextcore.cpp" -o "mintext.exe"
