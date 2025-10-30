@@ -145,7 +145,7 @@ void save_file() {
         fclose(file);
         std::cout << "\nFile '" << filename << "'Created";
     } else {
-        std::cout << "\nError saving file: Could not open file.";
+        std::cout << "\n\033[31mError\033[0m";
     }
     std::cout.flush();    
     get_key(); 
@@ -189,9 +189,9 @@ void load_file(const std::string& file_to_load) {
         }
         cursor_y = 0;
         cursor_x = 0;
-        std::cout << "\nFile '" << filename << "' loaded successfully!\nPress any key to continue...";
+        std::cout << "\nFile '" << filename << "' loaded";
     } else {
-        std::cout << "\nError loading file: Could not open file.\nPress any key to continue...";
+        std::cout << "\n\033[31mUnknown File path\033[0m\n";
     }
     std::cout.flush();
     get_key(); 
