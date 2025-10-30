@@ -3,8 +3,7 @@
 #include <string>
 #include <cstdio> 
 #include <cstdlib> 
-#include <conio.h> 
-#include <windows.h>
+#include <ncurses/ncurses.h>
 #include "mintextlib.h"
 
 void print(const std::string& str) { // im not dealing with std::cout spams in help
@@ -60,4 +59,5 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
 
