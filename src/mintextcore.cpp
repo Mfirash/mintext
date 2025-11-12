@@ -1,11 +1,11 @@
 #include <iostream>
+#include <limits>
 #include <vector>
 #include <string>
 #include <cstdio> 
 #include <cstdlib> 
 #include <algorithm>
-#include <conio.h> 
-#include <windows.h>
+#include <ncurses/ncurses.h>
 #include "mintextlib.h"
 
 // Global variables
@@ -20,47 +20,52 @@ std::vector<std::vector<std::string>> redo_history;
 const size_t MAX_HISTORY = 50;
 
 void clear_screen() {
-    system("cls");
-    std::cout << "\033[H\033[J"; 
+    clear();
 }
 
 void set_raw_mode() {
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);    
+    curs_set(1);
 }
 
 void unset_raw_mode() {
-
+    endwin();
 }
 void statusbar() { 
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(hConsole, &csbi);
-    COORD originalPos = csbi.dwCursorPosition;
-    COORD bottomLeft;
-    bottomLeft.X = 0;
-    bottomLeft.Y = csbi.srWindow.Bottom;
-    SetConsoleCursorPosition(hConsole, bottomLeft);      
-    std::cout << "\033[7m '" << filename << "' X: '" << cursor_x << "' Y: '" << cursor_y << "' Ln: '" << lines.size() << "' ";    
-    std::cout << "\033[0m";
-    SetConsoleCursorPosition(hConsole, originalPos);
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
+    attron(A_REVERSE);
+    move(max_y - 1,0);
+    printw("'");
+    printw(filename.c_str());
+    printw("' X: '%d' Y: '%d' Ln: '%zu'", cursor_x, cursor_y, lines.size());
+
+    for(int i = 0; i < max_x - (filename.length() + 18); ++i) {
+        printw(" ");    
+    }
+    attroff(A_REVERSE);
+    refresh();
 } 
 
 void set_window_name(const std::string& new_title) {
-    SetConsoleTitleA(new_title.c_str());
+    std::cout << "\033]0;" << new_title << "\007" << std::flush;
 }
 
 std::string get_key() {
-    int key = _getch();
-    if (key == 0 || key == 0xE0) { 
-        key = _getch();
-        if (key == 'H') return "UP";
-        else if (key == 'P') return "DOWN";
-        else if (key == 'K') return "LEFT";
-        else if (key == 'M') return "RIGHT";
-        else if (key == 'S') return "DEL";
-        else if (key == 'I') return "PGDN";
-        else if (key == 'O') return "END";
-        else return "UNKNOWN_SPECIAL_WIN";
-    } else if (key == 3) return "CTRL_C"; 
+    int key = getch();
+    
+    if (key == KEY_UP) return "UP";
+    else if (key == KEY_DOWN) return "DOWN";
+    else if (key == KEY_LEFT) return "LEFT";
+    else if (key == KEY_RIGHT) return "RIGHT";
+    else if (key == KEY_DC) return "DEL";
+    else if (key == KEY_NPAGE) return "PGDN";
+    else if (key == KEY_END) return "END";
+    
+    else if (key == 3) return "CTRL_C"; 
     else if (key == 22) return "CTRL_V"; 
     else if (key == 17) return "CTRL_Q"; 
     else if (key == 8) return "BACKSPACE";
@@ -69,22 +74,26 @@ std::string get_key() {
     else if (key == 26) return "CTRL_Z";    
     else if (key == 25) return "CTRL_Y";  
     else if (key == 15) return "CTRL_O";
-    else return std::string(1, static_cast<char>(key));
+
+    else if (key >= 32 && key <= 126) return std::string(1, static_cast<char>(key));
+
+    return "UNKNOWN";
 }
 
 void render_editor() {
     clear_screen();
 
-    for (int i = 0; i < lines.size(); ++i) {
-        printf("%4d %s\r\n", i + 1, lines[i].c_str());
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
+
+    for (int i = 0; i < lines.size() && i < max_y - 1; ++i) {
+        mvprintw(i, 0, "%4d ", i + 1);
+        printw("%s", lines[i].c_str());
     }  
     statusbar();
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    COORD pos;
-    pos.X = cursor_x + 5;
-    pos.Y = cursor_y;  
-    SetConsoleCursorPosition(hConsole, pos);  
-    statusbar();
+    move(cursor_y, cursor_x + 5);    
+    refresh();
+
 }
 
 void record_state() {
@@ -124,13 +133,13 @@ void redo() {
 }
 
 void save_file() {
-    clear_screen();
-    std::cout << "\033[H";
-    std::cout << "Enter filename to save: ";
-    std::cout.flush();
-
     unset_raw_mode();
+
+    std::cout << "\033[H";
+    std::cout << "Save: " << std::flush;
+    
     std::string new_filename_input;
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); 
     std::getline(std::cin, new_filename_input);
 
     if (!new_filename_input.empty()) {
@@ -156,21 +165,20 @@ void save_file() {
 
 void load_file(const std::string& file_to_load) {
     if (!file_to_load.empty()) {
-        filename = file_to_load; 
-    } else {
-    clear_screen();
-    std::cout << "\033[H";
-    std::cout << "Enter Path to load: ";
-    std::cout.flush();
-
-    unset_raw_mode();
-    std::string load_filename_input;
-    std::getline(std::cin, load_filename_input);
-
-    if (!load_filename_input.empty()) {
-        filename = load_filename_input;
-    }
-    }
+      
+    } else {    
+        unset_raw_mode();
+        std::cout << "\033[H";
+        std::cout << "Enter Path to load: " << std::flush;
+        std::string load_filename_input;
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::getline(std::cin, load_filename_input);
+        
+        if (!load_filename_input.empty()) {
+            filename = load_filename_input;
+        }   
+        
+    }     
 
     FILE* file = fopen(filename.c_str(), "r");
     if (file) {
@@ -211,12 +219,17 @@ void overwrite_file() {
         for (const auto& line : lines) {
             fprintf(file, "%s\n", line.c_str());
         }
-        fclose(file);
-        std::cout << "\033[30;1H\033[K\033[7mSAVED: " << filename << "\033[0m" << std::endl;
-        fflush(stdout);        
+        int max_y, max_x;
+        getmaxyx(stdscr, max_y, max_x);
+        mvprintw(max_y - 1, 0, "SAVED: %s", filename.c_str());
+        clrtoeol(); 
+        refresh(); 
     } else {
-        std::cout << "\033[30;1H\033[K\033[7mERROR SAVING: " << filename << "\033[0m" << std::endl;
-        fflush(stdout);
+        int max_y, max_x;
+        getmaxyx(stdscr, max_y, max_x);
+        mvprintw(max_y - 1, 0, "ERROR SAVING: %s", filename.c_str());
+        clrtoeol(); 
+        refresh();
     }
 }
 
@@ -262,9 +275,7 @@ void handle_key(const std::string& key) {
             cursor_x = 0;
         }        
     } else if (key == "ENTER") {
-        std::string part_after_cursor = current_line_content.substr(cursor_x);
-        current_line_content = current_line_content.substr(0, cursor_x);
-        lines.insert(lines.begin() + cursor_y + 1, part_after_cursor);
+        lines.insert(lines.begin() + cursor_y + 1, "");
         cursor_y++;
         cursor_x = 0;
     } else if (key == "BACKSPACE") {
