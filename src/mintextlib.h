@@ -24,3 +24,5 @@ void save_file();
 void load_file(const std::string& file_to_load);
 void overwrite_file();
 void handle_key(const std::string& key);
+void changefilename(const std::string& new_name); 
+bool createfile();
