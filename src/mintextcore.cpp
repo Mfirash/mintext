@@ -163,6 +163,27 @@ void save_file() {
     render_editor();
 }
 
+void changefilename(const std::string& new_name) { // API for apps that embed mintext
+    if (!new_name.empty()) {
+        filename = new_name;
+        set_window_name(filename);
+    }
+} 
+
+bool createfile() { // API for apps that embed mintext
+    FILE* file = fopen(filename.c_str(), "w");
+    if (file) {
+        fclose(file); 
+        lines.clear();
+        lines.emplace_back(""); 
+        cursor_y = 0;
+        cursor_x = 0;
+        return true; 
+    } else {
+        return false; 
+    }
+}
+
 void load_file(const std::string& file_to_load) {
     if (!file_to_load.empty()) {
       
@@ -250,7 +271,7 @@ void handle_key(const std::string& key) {
     std::string& current_line_content = lines[cursor_y];
     cursor_x = std::max(0, std::min(cursor_x, (int)current_line_content.length()));
 
-    if (key == "UP") {        
+    if (key == "UP") {      
         if (cursor_y > 0) {
             cursor_y--;
             cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
@@ -274,8 +295,10 @@ void handle_key(const std::string& key) {
             cursor_y++;
             cursor_x = 0;
         }        
-    } else if (key == "ENTER") {
-        lines.insert(lines.begin() + cursor_y + 1, "");
+    } else if (key == "ENTER") {   
+        std::string text_after_cursor = current_line_content.substr(cursor_x);
+        current_line_content.erase(cursor_x);
+        lines.insert(lines.begin() + cursor_y + 1, text_after_cursor);
         cursor_y++;
         cursor_x = 0;
     } else if (key == "BACKSPACE") {
