@@ -14,7 +14,7 @@ int main(int argc, char *argv[]) {
     if (argc > 1) {
         filename = argv[1];
         if (filename == "-help" || filename == "--h") {
-            print("Minimal text editor commands");
+            print("\033[1m mintext commands \033[0m");
             print("Ctrl+Q: Quit");
             print("Ctrl+S: Load");
             print("Ctrl+C: Copy");
@@ -26,9 +26,16 @@ int main(int argc, char *argv[]) {
             print("Ctrl+Z: Undo");
             print("Ctrl+Y: Redo");
             print("Ctrl+O: Overwrite");
+            print("");
+            print("\033[1m Arguments \033[0m"); 
+            print("-help or -h: Show command list"); 
+            print("-create or --c: Create new file"); 
             return 0;
         } else if (filename == "") // Do nothing if not loading file
         {
+        } else if (filename == "-create" || filename == "--c") {
+            changefilename(argv[2]);
+            createfile();
         } else {
         load_file(filename);
         };
@@ -50,13 +57,7 @@ int main(int argc, char *argv[]) {
     }
     unset_raw_mode();
     clear_screen();
-    std::cout << "Exited text editor." << std::endl;
-    std::cout << "\n---Content---" << std::endl;
-    for (const auto& line : lines) {
-        std::cout << line << std::endl;
-    }
-    std::cout << "-------------\n" << std::endl;
-
+    std::cout << "Exit" << std::endl;
     return 0;
 }
 
