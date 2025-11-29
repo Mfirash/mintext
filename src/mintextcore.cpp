@@ -18,9 +18,27 @@ std::string filename = "untitled.txt";
 std::vector<std::vector<std::string>> undo_history;
 std::vector<std::vector<std::string>> redo_history;
 const size_t MAX_HISTORY = 50;
+int last_max_y = 0;
+int last_max_x = 0;
+int max_y, max_x;
+int scroll_y = 0; 
+int scroll_x = 0;
 
-void clear_screen() {
+void clear_screen() {    
+    getmaxyx(stdscr, max_y, max_x);    
     clear();
+    erase();
+    refresh();   
+    std::cout << "\033[J";    
+}
+
+void fullclear() {
+    #ifdef _WIN32
+        system("cls");
+    #else
+        system("clear");
+    #endif
+    std::cout << "\033[J";
 }
 
 void set_raw_mode() {
@@ -29,11 +47,22 @@ void set_raw_mode() {
     noecho();
     keypad(stdscr, TRUE);    
     curs_set(1);
+    getmaxyx(stdscr, last_max_y, last_max_x);
 }
 
 void unset_raw_mode() {
     endwin();
 }
+
+void check_resize() {    
+    getmaxyx(stdscr, max_y, max_x);
+
+    if (max_y != last_max_y || max_x != last_max_x) {
+        last_max_y = max_y;
+        last_max_x = max_x;        
+    }
+}
+
 void statusbar() { 
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
@@ -44,7 +73,8 @@ void statusbar() {
     printw("' X: '%d' Y: '%d' Ln: '%zu'", cursor_x, cursor_y, lines.size());
 
     for(int i = 0; i < max_x - (filename.length() + 18); ++i) {
-        printw(" ");    
+        printw(" ");  
+        getmaxyx(stdscr, max_y, max_x);  
     }
     attroff(A_REVERSE);
     refresh();
@@ -64,6 +94,7 @@ std::string get_key() {
     else if (key == KEY_DC) return "DEL";
     else if (key == KEY_NPAGE) return "PGDN";
     else if (key == KEY_END) return "END";
+    else if (key == KEY_RESIZE) return "RESIZE";
     
     else if (key == 3) return "CTRL_C"; 
     else if (key == 22) return "CTRL_V"; 
@@ -82,18 +113,40 @@ std::string get_key() {
 
 void render_editor() {
     clear_screen();
-
-    int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
-
-    for (int i = 0; i < lines.size() && i < max_y - 1; ++i) {
-        mvprintw(i, 0, "%4d ", i + 1);
-        printw("%s", lines[i].c_str());
-    }  
+    if (cursor_y < scroll_y) {
+        scroll_y = cursor_y;
+    }
+    if (cursor_y >= scroll_y + max_y - 1) {
+        scroll_y = cursor_y - max_y + 2;
+    }
+    const int LINE_NUM_WIDTH = 5;
+    if (cursor_x < scroll_x) {
+        scroll_x = cursor_x;
+    }
+    if (cursor_x >= scroll_x + max_x - LINE_NUM_WIDTH) {
+        scroll_x = cursor_x - max_x + LINE_NUM_WIDTH + 1;
+    }
+    for (int i = 0; i < max_y - 1; ++i) {
+        int line_index = scroll_y + i;
+        if (line_index >= lines.size()) {
+            mvprintw(i, 0, "~");
+            continue;
+        }
+        mvprintw(i, 0, "%4d ", line_index + 1);
+        const std::string& line = lines[line_index];
+        std::string visible_part;
+        if (scroll_x < line.length()) {
+            visible_part = line.substr(scroll_x);
+            if (visible_part.length() > max_x - LINE_NUM_WIDTH) {
+                visible_part = visible_part.substr(0, max_x - LINE_NUM_WIDTH);
+            }
+        }
+        mvprintw(i, LINE_NUM_WIDTH, "%s", visible_part.c_str());
+    }
     statusbar();
-    move(cursor_y, cursor_x + 5);    
+    move(cursor_y - scroll_y, cursor_x - scroll_x + LINE_NUM_WIDTH);    
     refresh();
-
 }
 
 void record_state() {
@@ -358,8 +411,19 @@ void handle_key(const std::string& key) {
     } else if (key == "CTRL_O") 
     {
         overwrite_file();
-    } 
+    } else if (key.length() == 1) {
+        int max_y, max_x;
+        getmaxyx(stdscr, max_y, max_x);
+        if (cursor_x >= max_x - 5) {
+        lines.insert(lines.begin() + cursor_y + 1, "");
+        cursor_y++;
+        cursor_x = 0;
+        }
+        current_line_content.insert(cursor_x, key);
+        cursor_x++;
+    }
 
     cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
 }
+
 
