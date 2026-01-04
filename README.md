@@ -1,5 +1,5 @@
 # Minimal Text
-A CLI text editor in C++
+A TUI text editor in C++
 # Commands:
 * ^Q = Quit
 * ^S = Load
