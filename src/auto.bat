@@ -1,2 +1,2 @@
-g++.exe -static -fdiagnostics-color=always -g "mintext.cpp" "mintextcore.cpp" -lncursesw -o "mintext.exe"
+g++ -Os -ffunction-sections -fdata-sections -static "mintext.cpp" "mintextcore.cpp" -o "mintext.exe" -I"../cursesbulid/PDCurses" -DPDC_WIDE -DPDC_STATIC_BUILD pdcurses.a -lgdi32 -lcomdlg32 -lwinmm -Wl,--gc-sections
 pause

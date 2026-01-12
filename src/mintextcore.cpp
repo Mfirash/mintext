@@ -1,4 +1,3 @@
-#define NCURSES_STATIC
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -6,7 +5,7 @@
 #include <cstdio> 
 #include <cstdlib> 
 #include <algorithm>
-#include <ncurses/ncurses.h>
+#include <curses.h>
 #include "mintextlib.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -61,10 +60,11 @@ void check_resize() {
         return;
     }
 #else
-    getmaxyx(stdscr, new_y, new_x);
+        resizeterm(new_y, new_x);
+        render_editor();
 #endif
     if (new_max_y != last_max_y || new_max_x != last_max_x) {
-        resizeterm(new_max_y, new_max_x);        
+        resize_term(new_max_y, new_max_x);        
         last_max_y = new_max_y;
         last_max_x = new_max_x;
         max_y = new_max_y;

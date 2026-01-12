@@ -1,10 +1,9 @@
-#define NCURSES_STATIC
 #include <iostream>
 #include <vector>
 #include <string>
 #include <cstdio> 
 #include <cstdlib> 
-#include <ncurses/ncurses.h>
+#include <curses.h>
 #include "mintextlib.h"
 
 void print(const std::string& str) { // im not dealing with std::cout spams in help
@@ -41,8 +40,8 @@ int main(int argc, char *argv[]) {
         load_file(filename);
         };
     }
-    clear_screen();
     set_raw_mode();
+    clear_screen();    
     try {
         render_editor();
 
