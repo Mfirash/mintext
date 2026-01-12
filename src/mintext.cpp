@@ -1,3 +1,4 @@
+#define NCURSES_STATIC
 #include <iostream>
 #include <vector>
 #include <string>
@@ -10,7 +11,7 @@ void print(const std::string& str) { // im not dealing with std::cout spams in h
     std::cout << str << std::endl;
 };
 
-int main(int argc, char *argv[]) {        
+int main(int argc, char *argv[]) {    
     if (argc > 1) {
         filename = argv[1];
         if (filename == "-help" || filename == "--h") {
@@ -30,16 +31,12 @@ int main(int argc, char *argv[]) {
             print("\033[1m Arguments \033[0m"); 
             print("-help or -h: Show command list"); 
             print("-create or --c: Create new file"); 
-            print("-version or --v Show version number");
             return 0;
         } else if (filename == "") // Do nothing if not loading file
         {
         } else if (filename == "-create" || filename == "--c") {
             changefilename(argv[2]);
             createfile();
-        } else if (filename == "-version" || filename == "--v") {
-            print("0.0.7");
-            return 0;
         } else {
         load_file(filename);
         };
@@ -47,7 +44,7 @@ int main(int argc, char *argv[]) {
     clear_screen();
     set_raw_mode();
     try {
-        render_editor();       
+        render_editor();
 
         while (running) {
             check_resize();

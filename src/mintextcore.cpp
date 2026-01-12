@@ -1,3 +1,4 @@
+#define NCURSES_STATIC
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -7,6 +8,10 @@
 #include <algorithm>
 #include <ncurses/ncurses.h>
 #include "mintextlib.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 
 // Global variables
 std::vector<std::string> lines = {""};
@@ -32,15 +37,6 @@ void clear_screen() {
     std::cout << "\033[J";    
 }
 
-void fullclear() {
-    #ifdef _WIN32
-        system("cls");
-    #else
-        system("clear");
-    #endif
-    std::cout << "\033[J";
-}
-
 void set_raw_mode() {
     initscr();
     cbreak();
@@ -55,11 +51,28 @@ void unset_raw_mode() {
 }
 
 void check_resize() {    
-    getmaxyx(stdscr, max_y, max_x);
-
-    if (max_y != last_max_y || max_x != last_max_x) {
-        last_max_y = max_y;
-        last_max_x = max_x;        
+    int new_max_y, new_max_x;
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        new_max_x = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        new_max_y = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    } else {
+        return;
+    }
+#else
+    getmaxyx(stdscr, new_y, new_x);
+#endif
+    if (new_max_y != last_max_y || new_max_x != last_max_x) {
+        resizeterm(new_max_y, new_max_x);        
+        last_max_y = new_max_y;
+        last_max_x = new_max_x;
+        max_y = new_max_y;
+        max_x = new_max_x;
+        if (cursor_y >= new_max_y + scroll_y - 1) {
+            scroll_y = std::max(0, cursor_y - new_max_y + 2);
+        }        
+        clear(); 
     }
 }
 
@@ -112,38 +125,35 @@ std::string get_key() {
 }
 
 void render_editor() {
-    clear_screen();
+    check_resize();
+    erase();  
+    clear_screen();  
     getmaxyx(stdscr, max_y, max_x);
-    if (cursor_y < scroll_y) {
-        scroll_y = cursor_y;
-    }
-    if (cursor_y >= scroll_y + max_y - 1) {
-        scroll_y = cursor_y - max_y + 2;
-    }
     const int LINE_NUM_WIDTH = 5;
-    if (cursor_x < scroll_x) {
-        scroll_x = cursor_x;
+    const int EDIT_HEIGHT = max_y - 1; 
+    if (cursor_y < scroll_y) scroll_y = cursor_y;
+    if (cursor_y >= scroll_y + EDIT_HEIGHT) scroll_y = cursor_y - EDIT_HEIGHT + 1;
+    if (cursor_x < scroll_x) scroll_x = cursor_x;
+    if (cursor_x >= scroll_x + (max_x - LINE_NUM_WIDTH)) {
+        scroll_x = cursor_x - (max_x - LINE_NUM_WIDTH) + 1;
     }
-    if (cursor_x >= scroll_x + max_x - LINE_NUM_WIDTH) {
-        scroll_x = cursor_x - max_x + LINE_NUM_WIDTH + 1;
-    }
-    for (int i = 0; i < max_y - 1; ++i) {
-        int line_index = scroll_y + i;
-        if (line_index >= lines.size()) {
-            mvprintw(i, 0, "~");
-            continue;
-        }
-        mvprintw(i, 0, "%4d ", line_index + 1);
-        const std::string& line = lines[line_index];
-        std::string visible_part;
-        if (scroll_x < line.length()) {
-            visible_part = line.substr(scroll_x);
-            if (visible_part.length() > max_x - LINE_NUM_WIDTH) {
-                visible_part = visible_part.substr(0, max_x - LINE_NUM_WIDTH);
+    for (int i = 0; i < EDIT_HEIGHT; ++i) {
+        int line_index = scroll_y + i;        
+        if (line_index < lines.size()) {
+            mvprintw(i, 0, "%4d ", line_index + 1);
+            const std::string& line = lines[line_index];
+            if (scroll_x < line.length()) {
+                std::string visible_part = line.substr(scroll_x);
+                if (visible_part.length() > max_x - LINE_NUM_WIDTH) {
+                    visible_part = visible_part.substr(0, max_x - LINE_NUM_WIDTH);
+                }
+                mvprintw(i, LINE_NUM_WIDTH, "%s", visible_part.c_str());
             }
+        } else {
+            mvprintw(i, 0, ".");
         }
-        mvprintw(i, LINE_NUM_WIDTH, "%s", visible_part.c_str());
     }
+
     statusbar();
     move(cursor_y - scroll_y, cursor_x - scroll_x + LINE_NUM_WIDTH);    
     refresh();

@@ -9,6 +9,12 @@ extern int cursor_x;
 extern std::string clipboard;
 extern bool running;
 extern std::string filename;
+extern int scroll_x;
+extern int last_max_y;
+extern int last_max_x;
+extern int max_y, max_x;
+extern int scroll_y; 
+
 
 void clear_screen();
 void set_raw_mode();
@@ -26,3 +32,4 @@ void overwrite_file();
 void handle_key(const std::string& key);
 void changefilename(const std::string& new_name); 
 bool createfile();
+void check_resize();
