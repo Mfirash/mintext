@@ -14,7 +14,8 @@ extern int last_max_y;
 extern int last_max_x;
 extern int max_y, max_x;
 extern int scroll_y; 
-
+extern int sel_anchor_y, sel_anchor_x;
+extern bool is_selecting;
 
 void clear_screen();
 void set_raw_mode();

@@ -26,6 +26,7 @@ int main(int argc, char *argv[]) {
             print("Ctrl+Z: Undo");
             print("Ctrl+Y: Redo");
             print("Ctrl+O: Overwrite");
+            print("Ctrl+A: Toggle select on or off");
             print("");
             print("\033[1m Arguments \033[0m"); 
             print("-help or -h: Show command list"); 
