@@ -27,10 +27,21 @@ int main(int argc, char *argv[]) {
             print("Ctrl+Y: Redo");
             print("Ctrl+O: Overwrite");
             print("Ctrl+A: Toggle select on or off");
+            print("Ctrl+X: Show cmdbar");
             print("");
             print("\033[1m Arguments \033[0m"); 
             print("-help or -h: Show command list"); 
             print("-create or --c: Create new file"); 
+            print("");
+            print("\033[1m Cmdbar Commands \033[0m");
+            print("quit/q: Quit");
+            print("save/sv: Save");
+            print("load/ld: Load");
+            print("name <filename>: Change name");
+            print("overwrite/ow/w: Overwrite file");
+            print("end: Goto end");
+            print("gotoy/y <int y>: Goto specified y");
+            print("gotox/x <int x>: Goto specified x");
             return 0;
         } else if (filename == "") // Do nothing if not loading file
         {

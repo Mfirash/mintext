@@ -15,7 +15,7 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
     switch (fdwCtrlType)
     {
     case CTRL_C_EVENT:
-        return TRUE; // Report that we handled the character
+        return TRUE;
     default:
         return FALSE;
     }
@@ -47,7 +47,6 @@ void clear_screen()
     clear();
     erase();
     refresh();
-    std::cout << "\033[J";
 }
 
 void set_raw_mode()
@@ -81,7 +80,7 @@ void check_resize()
     else
     {
         return;
-    }
+    }    
 #else
     resizeterm(new_y, new_x);
     render_editor();
@@ -120,6 +119,100 @@ void statusbar()
     refresh();
 }
 
+void cmdbar()
+{
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
+    move(max_y - 1, 0);
+    clrtoeol();
+    printw("> ");
+    echo();
+    curs_set(1);
+    char buffer[256];
+    getnstr(buffer, sizeof(buffer) - 1);
+    std::string full_input(buffer);
+    noecho();
+    if (full_input.empty())
+        return;
+    std::string cmd;
+    std::string args;
+    size_t space_pos = full_input.find(' ');
+    if (space_pos != std::string::npos)
+    {
+        cmd = full_input.substr(0, space_pos);
+        args = full_input.substr(space_pos + 1);
+    }
+    else
+    {
+        cmd = full_input;
+    }
+    if (cmd == "quit" || cmd == "q")
+    {
+        running = false;
+    }
+    else if (cmd == "save" || cmd == "sv")
+    {
+        if (!args.empty()) 
+        {
+            changefilename(args);
+            overwrite_file();
+            overwrite_file();
+        } else 
+        {
+            overwrite_file();
+        }
+        
+    }
+    else if (cmd == "load" || cmd == "ld")
+    {        
+        load_file(args);
+    }
+    else if (cmd == "name")
+    {
+        if (!args.empty())
+            changefilename(args);
+    }
+    else if (cmd == "overwrite" || cmd == "ow" || cmd == "w")
+    {
+        overwrite_file();
+    }
+    else if (cmd == "end" || cmd == "e")
+    {
+        cursor_y = (lines.empty()) ? 0 : (int)lines.size() - 1;
+        cursor_x = (lines.empty()) ? 0 : (int)lines[cursor_y].length();
+    }
+    else if (cmd == "gotoy" || cmd == "y" || cmd == "line")
+    {
+        if (!args.empty())
+        {
+            try
+            {
+                int target_y = std::stoi(args) - 1;
+                cursor_y = std::max(0, std::min(target_y, (int)lines.size() - 1));
+                cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    else if (cmd == "gotox" || cmd == "x")
+    {
+        if (!args.empty())
+        {
+            try
+            {
+                int target_x = std::stoi(args);
+                cursor_x = std::max(0, std::min(target_x, (int)lines[cursor_y].length()));
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+    render_editor();
+}
+
 void set_window_name(const std::string &new_title)
 {
     std::cout << "\033]0;" << new_title << "\007" << std::flush;
@@ -145,7 +238,6 @@ std::string get_key()
         return "END";
     else if (key == KEY_RESIZE)
         return "RESIZE";
-
     else if (key == 3)
         return "CTRL_C";
     else if (key == 22)
@@ -166,6 +258,8 @@ std::string get_key()
         return "CTRL_O";
     else if (key == 1)
         return "CTRL_A";
+    else if (key == 24)
+        return "CTRL_X";
 
     else if (key >= 32 && key <= 126)
         return std::string(1, static_cast<char>(key));
@@ -386,25 +480,18 @@ void load_file(const std::string &file_to_load)
     FILE *file = fopen(filename.c_str(), "r");
     if (file)
     {
-        lines.clear();
+        std::vector<std::string> new_lines;
         char buffer[1024];
-        while (fgets(buffer, sizeof(buffer), file))
-        {
+        while (fgets(buffer, sizeof(buffer), file)) {
             std::string line(buffer);
-            if (!line.empty() && line.back() == '\n')
-            {
-                line.pop_back();
-            }
-            lines.push_back(line);
+            if (!line.empty() && line.back() == '\n') line.pop_back();
+            new_lines.push_back(line);
         }
-        fclose(file);
-        if (lines.empty())
-        {
-            lines.emplace_back("");
-        }
+        fclose(file);        
+        if (new_lines.empty()) new_lines.push_back("");        
+        lines = new_lines;
         cursor_y = 0;
         cursor_x = 0;
-        std::cout << "\nFile '" << filename << "' loaded";
     }
     else
     {
@@ -425,13 +512,16 @@ void overwrite_file()
         save_file();
         return;
     }
+    if (lines.empty()) return;
     FILE *file = fopen(filename.c_str(), "w");
     if (file)
     {
-        for (const auto &line : lines)
+        for (size_t i = 0; i < lines.size(); ++i)
         {
-            fprintf(file, "%s\n", line.c_str());
+            fputs(lines[i].c_str(), file);
+            if (i < lines.size() - 1) fputc('\n', file);
         }
+        fclose(file);
         int max_y, max_x;
         getmaxyx(stdscr, max_y, max_x);
         mvprintw(max_y - 1, 0, "SAVED: %s", filename.c_str());
@@ -654,6 +744,10 @@ void handle_key(const std::string &key)
             sel_anchor_y = cursor_y;
             sel_anchor_x = cursor_x;
         }
+    }
+    else if (key == "CTRL_X")
+    {
+        cmdbar();
     }
     else if (key.length() == 1)
     {
