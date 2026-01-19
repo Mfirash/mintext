@@ -9,3 +9,7 @@ A TUI text editor in C++
 * End: Save
 * Backspace and Delete: Delete a character
 * Arrow keys = Move cursor
+To use syntax highlighting
+make syntax/[FILETYPE].syntax
+and put in
+[ATTRON_TYPE] { [WORDS] }
