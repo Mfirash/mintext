@@ -1,2 +1,2 @@
-g++ -Os -ffunction-sections -fdata-sections -static "mintext.cpp" "mintextcore.cpp" -o "mintext.exe" -I"../cursesbulid/PDCurses" -DPDC_WIDE -DPDC_STATIC_BUILD pdcurses.a -lgdi32 -lcomdlg32 -lwinmm -Wl,--gc-sections
+g++ -Oz -s -fno-rtti  -flto -ffunction-sections -fdata-sections -static "mintext.cpp" "mintextcore.cpp" -o "mintext.exe" -I"../cursesbulid/PDCurses" -DPDC_WIDE -DPDC_STATIC_BUILD pdcurses.a -lgdi32 -lcomdlg32 -lwinmm -Wl,--gc-sections
 pause

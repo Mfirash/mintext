@@ -6,10 +6,12 @@
 #include <cstdlib>
 #include <algorithm>
 #include <curses.h>
+#include <fstream>
+#include <sstream>
+#include <map>
 #include "mintextlib.h"
 #ifdef _WIN32
 #include <windows.h>
-
 BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
 {
     switch (fdwCtrlType)
@@ -40,11 +42,19 @@ int scroll_y = 0;
 int scroll_x = 0;
 int sel_anchor_y = -1, sel_anchor_x = -1;
 bool is_selecting = false;
+std::map<std::string, int> syntax_map;
+struct SR
+{
+    std::string start;
+    std::string end;
+    int attr;
+    bool multi_line;
+};
+std::vector<SR> special_rules;
 
 void clear_screen()
 {
     getmaxyx(stdscr, max_y, max_x);
-    clear();
     erase();
     refresh();
 }
@@ -52,6 +62,12 @@ void clear_screen()
 void set_raw_mode()
 {
     initscr();
+    start_color();
+    init_pair(1, COLOR_RED, COLOR_BLACK);
+    init_pair(2, COLOR_GREEN, COLOR_BLACK);
+    init_pair(3, COLOR_CYAN, COLOR_BLACK);
+    init_pair(4, COLOR_BLUE, COLOR_BLACK);
+    init_pair(5, COLOR_YELLOW, COLOR_BLACK);
 #ifdef _WIN32
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
 #endif
@@ -60,6 +76,16 @@ void set_raw_mode()
     keypad(stdscr, TRUE);
     curs_set(1);
     getmaxyx(stdscr, last_max_y, last_max_x);
+}
+Range get_ordered_range()
+{
+    Range r = {sel_anchor_y, sel_anchor_x, cursor_y, cursor_x};
+    if (r.start_y > r.end_y || (r.start_y == r.end_y && r.start_x > r.end_x))
+    {
+        std::swap(r.start_y, r.end_y);
+        std::swap(r.start_x, r.end_x);
+    }
+    return r;
 }
 
 void unset_raw_mode()
@@ -80,7 +106,7 @@ void check_resize()
     else
     {
         return;
-    }    
+    }
 #else
     resizeterm(new_y, new_x);
     render_editor();
@@ -98,6 +124,57 @@ void check_resize()
         }
         clear();
     }
+}
+
+void load_syntax(const std::string &file_ext)
+{
+    syntax_map.clear();
+    special_rules.clear();
+#ifdef _WIN32
+    std::string syntax_path = "syntax\\" + file_ext + ".syntax";
+#else
+    std::string syntax_path = "syntax/" + file_ext + ".syntax";
+#endif
+    std::ifstream file(syntax_path);
+    if (!file.is_open())
+        return;
+    std::string line;
+    while (std::getline(file, line))
+    {
+        if (line.empty())
+            continue;
+        size_t open_brace = line.find('{');
+        size_t close_brace = line.find('}');
+        if (open_brace != std::string::npos && close_brace != std::string::npos)
+        {
+            std::string attr_name = line.substr(0, open_brace);
+            int attr = A_NORMAL;
+            if (attr_name.find("COLOR_RED") != std::string::npos)
+                attr = COLOR_PAIR(1) | A_BOLD;
+            else if (attr_name.find("COLOR_BLUE") != std::string::npos)
+                attr = COLOR_PAIR(4) | A_BOLD;
+            else if (attr_name.find("COLOR_ORANGE") != std::string::npos)
+                attr = COLOR_PAIR(5) | A_BOLD;
+
+            std::string words_part = line.substr(open_brace + 1, close_brace - open_brace - 1);
+            std::stringstream ss(words_part);
+            std::string word;
+            while (ss >> word)
+            {
+                if (word == "\"")
+                {
+                    special_rules.push_back({"\"", "\"", attr, false});
+                }
+                else
+                {
+                    syntax_map[word] = attr;
+                }
+            }
+        }
+    }
+    special_rules.push_back({"//", "\n", COLOR_PAIR(2), false});
+    special_rules.push_back({"#", "\n", COLOR_PAIR(2), false});
+    special_rules.push_back({"--", "\n", COLOR_PAIR(2), false});
 }
 
 void statusbar()
@@ -152,19 +229,19 @@ void cmdbar()
     }
     else if (cmd == "save" || cmd == "sv")
     {
-        if (!args.empty()) 
+        if (!args.empty())
         {
             changefilename(args);
             overwrite_file();
             overwrite_file();
-        } else 
+        }
+        else
         {
             overwrite_file();
         }
-        
     }
     else if (cmd == "load" || cmd == "ld")
-    {        
+    {
         load_file(args);
     }
     else if (cmd == "name")
@@ -271,11 +348,8 @@ void render_editor()
 {
     check_resize();
     erase();
-    clear_screen();
-    getmaxyx(stdscr, max_y, max_x);
     const int LINE_NUM_WIDTH = 5;
     const int EDIT_HEIGHT = max_y - 1;
-
     if (cursor_y < scroll_y)
         scroll_y = cursor_y;
     if (cursor_y >= scroll_y + EDIT_HEIGHT)
@@ -283,58 +357,100 @@ void render_editor()
     if (cursor_x < scroll_x)
         scroll_x = cursor_x;
     if (cursor_x >= scroll_x + (max_x - LINE_NUM_WIDTH))
-    {
         scroll_x = cursor_x - (max_x - LINE_NUM_WIDTH) + 1;
-    }
 
-    int start_y = sel_anchor_y, start_x = sel_anchor_x;
-    int end_y = cursor_y, end_x = cursor_x;
-
-    if (start_y > end_y || (start_y == end_y && start_x > end_x))
-    {
-        std::swap(start_y, end_y);
-        std::swap(start_x, end_x);
-    }
+    Range r = get_ordered_range();
 
     for (int i = 0; i < EDIT_HEIGHT; ++i)
     {
         int line_index = scroll_y + i;
-        if (line_index < lines.size())
+        if (line_index < (int)lines.size())
         {
+            attron(COLOR_PAIR(3));
             mvprintw(i, 0, "%4d ", line_index + 1);
+            attroff(COLOR_PAIR(3));
             const std::string &line = lines[line_index];
+            int active_special_attr = -1;
+            bool in_string = false; 
             for (int x_idx = 0; x_idx < (max_x - LINE_NUM_WIDTH); ++x_idx)
             {
                 int real_x = x_idx + scroll_x;
-                if (real_x < line.length())
-                {
+                if (real_x >= (int)line.length())
+                    break;
+                if (line[real_x] == '"') {
+                    in_string = !in_string;
+                    int display_attr = COLOR_PAIR(5) | A_BOLD; 
                     bool in_selection = false;
-                    if (is_selecting)
-                    {
-                        if (line_index > start_y && line_index < end_y)
-                        {
-                            in_selection = true;
-                        }
-                        else if (start_y == end_y && line_index == start_y)
-                        {
-                            in_selection = (real_x >= start_x && real_x < end_x);
-                        }
-                        else if (line_index == start_y)
-                        {
-                            in_selection = (real_x >= start_x);
-                        }
-                        else if (line_index == end_y)
-                        {
-                            in_selection = (real_x < end_x);
+                    if (is_selecting) {
+                         if (line_index > r.start_y && line_index < r.end_y) in_selection = true;
+                         else if (r.start_y == r.end_y && line_index == r.start_y)
+                            in_selection = (real_x >= r.start_x && real_x < r.end_x);
+                    }
+                    if (in_selection) attron(A_REVERSE);
+                    attron(display_attr);
+                    mvaddch(i, x_idx + LINE_NUM_WIDTH, line[real_x]);
+                    attroff(display_attr);
+                    if (in_selection) attroff(A_REVERSE);
+                    continue; 
+                }
+                if (in_string) {
+                    active_special_attr = COLOR_PAIR(5) | A_BOLD;
+                } else {
+                    for (const auto &rule : special_rules) {
+                        if (line.substr(real_x, rule.start.length()) == rule.start) {
+                            active_special_attr = rule.attr;
+                            break;
                         }
                     }
-
-                    if (in_selection)
-                        attron(A_REVERSE);
-                    mvaddch(i, x_idx + LINE_NUM_WIDTH, line[real_x]);
-                    if (in_selection)
-                        attroff(A_REVERSE);
                 }
+
+                int current_char_attr = (active_special_attr != -1) ? active_special_attr : A_NORMAL;
+                if (active_special_attr == -1) {
+                    if (real_x == 0 || (!isalnum(line[real_x - 1]) && line[real_x - 1] != '_')) {
+                        std::string word;
+                        int temp_x = real_x;
+                        while (temp_x < (int)line.length() && (isalnum(line[temp_x]) || line[temp_x] == '_')) {
+                            word += line[temp_x++];
+                        }
+                        if (syntax_map.count(word)) {
+                            int word_attr = syntax_map[word];
+                            for (int k = 0; k < (int)word.length(); ++k) {
+                                int cur_real_x = real_x + k;
+                                int disp_x = x_idx + k;
+                                if (disp_x >= (max_x - LINE_NUM_WIDTH)) break;
+                                
+                                bool in_selection = false;
+                                if (is_selecting) {
+                                    if (line_index > r.start_y && line_index < r.end_y) in_selection = true;
+                                    else if (r.start_y == r.end_y && line_index == r.start_y)
+                                        in_selection = (cur_real_x >= r.start_x && cur_real_x < r.end_x);
+                                }
+
+                                if (in_selection) attron(A_REVERSE);
+                                attron(word_attr);
+                                mvaddch(i, disp_x + LINE_NUM_WIDTH, line[cur_real_x]);
+                                attroff(word_attr);
+                                if (in_selection) attroff(A_REVERSE);
+                            }
+                            x_idx += (word.length() - 1);
+                            continue;
+                        }
+                    }
+                }
+                bool in_selection = false;
+                if (is_selecting) {
+                    if (line_index > r.start_y && line_index < r.end_y) in_selection = true;
+                    else if (r.start_y == r.end_y && line_index == r.start_y)
+                        in_selection = (real_x >= r.start_x && real_x < r.end_x);
+                    else if (line_index == r.start_y) in_selection = (real_x >= r.start_x);
+                    else if (line_index == r.end_y) in_selection = (real_x < r.end_x);
+                }
+
+                if (in_selection) attron(A_REVERSE);
+                attron(current_char_attr);
+                mvaddch(i, x_idx + LINE_NUM_WIDTH, line[real_x]);
+                attroff(current_char_attr);
+                if (in_selection) attroff(A_REVERSE);
             }
         }
         else
@@ -342,7 +458,6 @@ void render_editor()
             mvprintw(i, 0, ".");
         }
     }
-
     statusbar();
     move(cursor_y - scroll_y, cursor_x - scroll_x + LINE_NUM_WIDTH);
     refresh();
@@ -462,12 +577,14 @@ void load_file(const std::string &file_to_load)
 {
     if (!file_to_load.empty())
     {
+        filename = file_to_load;
     }
     else
     {
+        attroff(A_REVERSE);
         unset_raw_mode();
         std::cout << "\033[H";
-        std::cout << "Enter Path to load: " << std::flush;
+        std::cout << "\033[0mEnter Path to load: " << std::flush;
         std::string load_filename_input;
         std::getline(std::cin, load_filename_input);
 
@@ -482,16 +599,25 @@ void load_file(const std::string &file_to_load)
     {
         std::vector<std::string> new_lines;
         char buffer[1024];
-        while (fgets(buffer, sizeof(buffer), file)) {
+        while (fgets(buffer, sizeof(buffer), file))
+        {
             std::string line(buffer);
-            if (!line.empty() && line.back() == '\n') line.pop_back();
+            if (!line.empty() && line.back() == '\n')
+                line.pop_back();
             new_lines.push_back(line);
         }
-        fclose(file);        
-        if (new_lines.empty()) new_lines.push_back("");        
+        fclose(file);
+        if (new_lines.empty())
+            new_lines.push_back("");
         lines = new_lines;
         cursor_y = 0;
         cursor_x = 0;
+        size_t dot_pos = filename.find_last_of('.');
+        if (dot_pos != std::string::npos)
+        {
+            std::string file_ext = filename.substr(dot_pos + 1);
+            load_syntax(file_ext);
+        }
     }
     else
     {
@@ -512,14 +638,16 @@ void overwrite_file()
         save_file();
         return;
     }
-    if (lines.empty()) return;
+    if (lines.empty())
+        return;
     FILE *file = fopen(filename.c_str(), "w");
     if (file)
     {
         for (size_t i = 0; i < lines.size(); ++i)
         {
             fputs(lines[i].c_str(), file);
-            if (i < lines.size() - 1) fputc('\n', file);
+            if (i < lines.size() - 1)
+                fputc('\n', file);
         }
         fclose(file);
         int max_y, max_x;
@@ -536,22 +664,6 @@ void overwrite_file()
         clrtoeol();
         refresh();
     }
-}
-
-struct Range
-{
-    int start_y, start_x, end_y, end_x;
-};
-
-Range get_ordered_range()
-{
-    Range r = {sel_anchor_y, sel_anchor_x, cursor_y, cursor_x};
-    if (r.start_y > r.end_y || (r.start_y == r.end_y && r.start_x > r.end_x))
-    {
-        std::swap(r.start_y, r.end_y);
-        std::swap(r.start_x, r.end_x);
-    }
-    return r;
 }
 
 void delete_selection()

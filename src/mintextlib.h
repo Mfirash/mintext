@@ -16,11 +16,15 @@ extern int max_y, max_x;
 extern int scroll_y; 
 extern int sel_anchor_y, sel_anchor_x;
 extern bool is_selecting;
+struct Range {
+    int start_y, start_x, end_y, end_x;
+};
 
 void clear_screen();
 void set_raw_mode();
 void unset_raw_mode();
 std::string get_key();
+void load_syntax(const std::string& extension);
 void render_editor();
 void statusbar();
 void set_window_name(const std::string& new_title);
