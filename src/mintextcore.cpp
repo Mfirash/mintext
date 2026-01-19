@@ -169,6 +169,15 @@ void load_syntax(const std::string &file_ext)
                 {
                     syntax_map[word] = attr;
                 }
+                bool is_special = false;
+                for (auto &rule : special_rules)
+                {
+                    if (rule.start == word)
+                    {
+                        rule.attr = attr;
+                        is_special = true;
+                    }
+                }
             }
         }
     }
@@ -350,6 +359,7 @@ void render_editor()
     erase();
     const int LINE_NUM_WIDTH = 5;
     const int EDIT_HEIGHT = max_y - 1;
+
     if (cursor_y < scroll_y)
         scroll_y = cursor_y;
     if (cursor_y >= scroll_y + EDIT_HEIGHT)
@@ -361,103 +371,157 @@ void render_editor()
 
     Range r = get_ordered_range();
 
+    int global_attr = -1;
+    std::string active_closer = "";
     for (int i = 0; i < EDIT_HEIGHT; ++i)
     {
         int line_index = scroll_y + i;
-        if (line_index < (int)lines.size())
+        if (line_index >= (int)lines.size())
         {
             attron(COLOR_PAIR(3));
-            mvprintw(i, 0, "%4d ", line_index + 1);
+            mvprintw(i, 0, ".");
             attroff(COLOR_PAIR(3));
-            const std::string &line = lines[line_index];
-            int active_special_attr = -1;
-            bool in_string = false; 
-            for (int x_idx = 0; x_idx < (max_x - LINE_NUM_WIDTH); ++x_idx)
+            continue;
+        }
+
+        const std::string &line = lines[line_index];
+        attron(COLOR_PAIR(3));
+        mvprintw(i, 0, "%4d ", line_index + 1);
+        attroff(COLOR_PAIR(3));
+
+        for (int x = 0; x < (int)line.length(); ++x)
+        {
+            int disp_x = x - scroll_x;
+            if (!active_closer.empty())
             {
-                int real_x = x_idx + scroll_x;
-                if (real_x >= (int)line.length())
-                    break;
-                if (line[real_x] == '"') {
-                    in_string = !in_string;
-                    int display_attr = COLOR_PAIR(5) | A_BOLD; 
-                    bool in_selection = false;
-                    if (is_selecting) {
-                         if (line_index > r.start_y && line_index < r.end_y) in_selection = true;
-                         else if (r.start_y == r.end_y && line_index == r.start_y)
-                            in_selection = (real_x >= r.start_x && real_x < r.end_x);
-                    }
-                    if (in_selection) attron(A_REVERSE);
-                    attron(display_attr);
-                    mvaddch(i, x_idx + LINE_NUM_WIDTH, line[real_x]);
-                    attroff(display_attr);
-                    if (in_selection) attroff(A_REVERSE);
-                    continue; 
-                }
-                if (in_string) {
-                    active_special_attr = COLOR_PAIR(5) | A_BOLD;
-                } else {
-                    for (const auto &rule : special_rules) {
-                        if (line.substr(real_x, rule.start.length()) == rule.start) {
-                            active_special_attr = rule.attr;
-                            break;
+                if (line.substr(x, active_closer.length()) == active_closer)
+                {
+                    if (disp_x >= 0 && disp_x < max_x - LINE_NUM_WIDTH)
+                    {
+                        attron(global_attr);
+                        for (int k = 0; k < (int)active_closer.length(); ++k)
+                        {
+                            if (disp_x + k < max_x - LINE_NUM_WIDTH)
+                                mvaddch(i, disp_x + k + LINE_NUM_WIDTH, line[x + k]);
                         }
+                        attroff(global_attr);
                     }
+                    x += active_closer.length() - 1;
+                    active_closer = "";
+                    global_attr = -1;
+                    continue;
+                }
+            }
+            else
+            {
+                for (const auto &rule : special_rules)
+                {
+                    if (line.substr(x, rule.start.length()) == rule.start)
+                    {
+                        global_attr = rule.attr;
+                        active_closer = rule.end;
+
+                        if (active_closer == "\n")
+                        {
+                            attron(global_attr);
+                            for (int rem = x; rem < (int)line.length(); ++rem)
+                            {
+                                int r_disp = rem - scroll_x;
+                                if (r_disp >= 0 && r_disp < max_x - LINE_NUM_WIDTH)
+                                    mvaddch(i, r_disp + LINE_NUM_WIDTH, line[rem]);
+                            }
+                            attroff(global_attr);
+                            x = line.length();
+                            global_attr = -1;
+                            active_closer = "";
+                        }
+                        else
+                        {
+                            int disp_x = x - scroll_x;
+                            if (disp_x >= 0 && disp_x < max_x - LINE_NUM_WIDTH)
+                            {
+                                attron(global_attr);
+                                for (int k = 0; k < (int)rule.start.length(); ++k)
+                                {
+                                    if (disp_x + k < max_x - LINE_NUM_WIDTH)
+                                        mvaddch(i, disp_x + k + LINE_NUM_WIDTH, line[x + k]);
+                                }
+                                attroff(global_attr);
+                            }
+                            x += rule.start.length() - 1;
+                        }
+                        goto next_char;
+                    }
+                }
+            }
+            if (disp_x >= 0 && disp_x < max_x - LINE_NUM_WIDTH)
+            {
+                bool in_selection = false;
+                if (is_selecting)
+                {
+                    if (line_index > r.start_y && line_index < r.end_y)
+                        in_selection = true;
+                    else if (r.start_y == r.end_y && line_index == r.start_y)
+                        in_selection = (x >= r.start_x && x < r.end_x);
+                    else if (line_index == r.start_y)
+                        in_selection = (x >= r.start_x);
+                    else if (line_index == r.end_y)
+                        in_selection = (x < r.end_x);
                 }
 
-                int current_char_attr = (active_special_attr != -1) ? active_special_attr : A_NORMAL;
-                if (active_special_attr == -1) {
-                    if (real_x == 0 || (!isalnum(line[real_x - 1]) && line[real_x - 1] != '_')) {
-                        std::string word;
-                        int temp_x = real_x;
-                        while (temp_x < (int)line.length() && (isalnum(line[temp_x]) || line[temp_x] == '_')) {
+                if (in_selection)
+                    attron(A_REVERSE);
+
+                if (global_attr != -1)
+                {
+                    attron(global_attr);
+                    mvaddch(i, disp_x + LINE_NUM_WIDTH, line[x]);
+                    attroff(global_attr);
+                }
+                else
+                {
+                    std::string word;
+                    if (x == 0 || (!isalnum(line[x - 1]) && line[x - 1] != '_'))
+                    {
+                        int temp_x = x;
+                        while (temp_x < (int)line.length() && (isalnum(line[temp_x]) || line[temp_x] == '_'))
+                        {
                             word += line[temp_x++];
                         }
-                        if (syntax_map.count(word)) {
-                            int word_attr = syntax_map[word];
-                            for (int k = 0; k < (int)word.length(); ++k) {
-                                int cur_real_x = real_x + k;
-                                int disp_x = x_idx + k;
-                                if (disp_x >= (max_x - LINE_NUM_WIDTH)) break;
-                                
-                                bool in_selection = false;
-                                if (is_selecting) {
-                                    if (line_index > r.start_y && line_index < r.end_y) in_selection = true;
-                                    else if (r.start_y == r.end_y && line_index == r.start_y)
-                                        in_selection = (cur_real_x >= r.start_x && cur_real_x < r.end_x);
-                                }
-
-                                if (in_selection) attron(A_REVERSE);
-                                attron(word_attr);
-                                mvaddch(i, disp_x + LINE_NUM_WIDTH, line[cur_real_x]);
-                                attroff(word_attr);
-                                if (in_selection) attroff(A_REVERSE);
+                        if (!word.empty() && syntax_map.count(word))
+                        {
+                            attron(syntax_map[word]);
+                            for (int k = 0; k < (int)word.length(); ++k)
+                            {
+                                int kw_disp = disp_x + k;
+                                if (kw_disp >= 0 && kw_disp < max_x - LINE_NUM_WIDTH)
+                                    mvaddch(i, kw_disp + LINE_NUM_WIDTH, line[x + k]);
                             }
-                            x_idx += (word.length() - 1);
-                            continue;
+                            attroff(syntax_map[word]);
+                            x += word.length() - 1;
+                        }
+                        else
+                        {
+                            mvaddch(i, disp_x + LINE_NUM_WIDTH, line[x]);
                         }
                     }
+                    else
+                    {
+                        mvaddch(i, disp_x + LINE_NUM_WIDTH, line[x]);
+                    }
                 }
-                bool in_selection = false;
-                if (is_selecting) {
-                    if (line_index > r.start_y && line_index < r.end_y) in_selection = true;
-                    else if (r.start_y == r.end_y && line_index == r.start_y)
-                        in_selection = (real_x >= r.start_x && real_x < r.end_x);
-                    else if (line_index == r.start_y) in_selection = (real_x >= r.start_x);
-                    else if (line_index == r.end_y) in_selection = (real_x < r.end_x);
-                }
-
-                if (in_selection) attron(A_REVERSE);
-                attron(current_char_attr);
-                mvaddch(i, x_idx + LINE_NUM_WIDTH, line[real_x]);
-                attroff(current_char_attr);
-                if (in_selection) attroff(A_REVERSE);
+                if (in_selection)
+                    attroff(A_REVERSE);
             }
+        next_char:;
         }
-        else
+        if (active_closer == "\n")
         {
-            mvprintw(i, 0, ".");
+            active_closer = "";
+            global_attr = -1;
         }
     }
+
     statusbar();
     move(cursor_y - scroll_y, cursor_x - scroll_x + LINE_NUM_WIDTH);
     refresh();
