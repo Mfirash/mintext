@@ -62,6 +62,8 @@ void clear_screen()
 void set_raw_mode()
 {
     initscr();
+    keypad(stdscr, TRUE);
+    mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION | BUTTON1_PRESSED | BUTTON1_RELEASED, NULL);
     start_color();
     init_pair(1, COLOR_RED, COLOR_BLACK);
     init_pair(2, COLOR_GREEN, COLOR_BLACK);
@@ -74,6 +76,7 @@ void set_raw_mode()
     raw();
     noecho();
     keypad(stdscr, TRUE);
+    mouseinterval(0);
     curs_set(1);
     getmaxyx(stdscr, last_max_y, last_max_x);
 }
@@ -346,6 +349,10 @@ std::string get_key()
         return "CTRL_A";
     else if (key == 24)
         return "CTRL_X";
+    else if (key == KEY_MOUSE)
+        return "MOUSE";
+    else if (key == '\t')
+        return "TAB";
 
     else if (key >= 32 && key <= 126)
         return std::string(1, static_cast<char>(key));
@@ -892,6 +899,11 @@ void handle_key(const std::string &key)
         save_file();
         running = false;
     }
+    else if (key == "TAB")
+    {
+        current_line_content.insert(cursor_x, "    ");
+        cursor_x += 4;
+    }
     else if (key == "CTRL_Q")
     {
         running = false;
@@ -924,6 +936,47 @@ void handle_key(const std::string &key)
     else if (key == "CTRL_X")
     {
         cmdbar();
+    }
+    else if (key == "MOUSE")
+    {
+        MEVENT event;
+        if (nc_getmouse(&event) == OK)
+        {
+            int clicked_y = event.y + scroll_y;
+            int clicked_x = event.x - 5 + scroll_x;
+            if (event.bstate & BUTTON4_PRESSED)
+            {
+                if (scroll_y > 0)
+                    scroll_y--;
+            }
+            else if (event.bstate & BUTTON5_PRESSED)
+            {
+                scroll_y++;
+            }
+            else if (event.bstate & BUTTON1_PRESSED)
+            {
+                is_selecting = true;
+                cursor_y = std::max(0, std::min(clicked_y, (int)lines.size() - 1));
+                cursor_x = std::max(0, std::min(clicked_x, (int)lines[cursor_y].length()));
+                sel_anchor_y = cursor_y;
+                sel_anchor_x = cursor_x;
+            }
+            else if (event.bstate & REPORT_MOUSE_POSITION)
+            {
+                if (is_selecting)
+                {
+                    cursor_y = std::max(0, std::min(clicked_y, (int)lines.size() - 1));
+                    cursor_x = std::max(0, std::min(clicked_x, (int)lines[cursor_y].length()));
+                }
+            }
+            else if (event.bstate & BUTTON1_RELEASED)
+            {
+                if (cursor_y == sel_anchor_y && cursor_x == sel_anchor_x)
+                {
+                    is_selecting = false;
+                }
+            }
+        }
     }
     else if (key.length() == 1)
     {

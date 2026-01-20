@@ -32,6 +32,7 @@ int main(int argc, char *argv[])
             print("Ctrl+O: Overwrite");
             print("Ctrl+A: Toggle select on or off");
             print("Ctrl+X: Show cmdbar");
+            print("Tab: Insert 4 spaces");
             print("");
             print("\033[1m Arguments \033[0m");
             print("-help or -h: Show command list");
@@ -46,6 +47,7 @@ int main(int argc, char *argv[])
             print("end: Goto end");
             print("gotoy/y <int y>: Goto specified y");
             print("gotox/x <int x>: Goto specified x");
+            print("also theres mouse support");
             return 0;
         }
         else if (filename == "") // Do nothing if not loading file
