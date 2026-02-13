@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
             print("Ctrl+O: Overwrite");
             print("Ctrl+A: Toggle select on or off");
             print("Ctrl+X: Show cmdbar");
-            print("Tab: Insert 4 spaces");
+            print("Tab: Insert 4/tabsize spaces");
             print("");
             print("\033[1m Arguments \033[0m");
             print("-help or -h: Show command list");
@@ -47,6 +47,9 @@ int main(int argc, char *argv[])
             print("end: Goto end");
             print("gotoy/y <int y>: Goto specified y");
             print("gotox/x <int x>: Goto specified x");
+            print("find/f <word>: Find word");
+            print("replace/rep/r <word> <new word>: Replace word");
+            print("tabsize/tab/t <int tabsize>: Change tab size");
             print("also theres mouse support");
             return 0;
         }

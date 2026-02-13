@@ -3,6 +3,14 @@
 #include <string>
 #include <vector>
 
+struct SR {
+    std::string start;
+    std::string end;
+    int attr;
+    bool multi_line;
+    bool is_comment;
+};
+
 extern std::vector<std::string> lines;
 extern int cursor_y;
 extern int cursor_x;
@@ -19,6 +27,9 @@ extern bool is_selecting;
 struct Range {
     int start_y, start_x, end_y, end_x;
 };
+extern std::vector<SR> special_rules;
+struct SR;
+extern SR* active_rule;
 
 void clear_screen();
 void set_raw_mode();
@@ -38,3 +49,5 @@ void handle_key(const std::string& key);
 void changefilename(const std::string& new_name); 
 bool createfile();
 void check_resize();
+void rreplace(std::string current_word, std::string new_word);
+void rfind(std::string word);

@@ -9,9 +9,11 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <regex>
 #include "mintextlib.h"
 #ifdef _WIN32
 #include <windows.h>
+
 BOOL WINAPI CtrlHandler(DWORD fdwCtrlType)
 {
     switch (fdwCtrlType)
@@ -43,14 +45,10 @@ int scroll_x = 0;
 int sel_anchor_y = -1, sel_anchor_x = -1;
 bool is_selecting = false;
 std::map<std::string, int> syntax_map;
-struct SR
-{
-    std::string start;
-    std::string end;
-    int attr;
-    bool multi_line;
-};
+SR *active_rule = nullptr;
 std::vector<SR> special_rules;
+std::string promptt = "> ";
+int tabsize = 4;
 
 void clear_screen()
 {
@@ -146,6 +144,9 @@ void load_syntax(const std::string &file_ext)
     {
         if (line.empty())
             continue;
+
+        bool is_ml = (line.find("--multi_line") != std::string::npos);
+        bool is_cmt = (line.find("--comment") != std::string::npos);
         size_t open_brace = line.find('{');
         size_t close_brace = line.find('}');
         if (open_brace != std::string::npos && close_brace != std::string::npos)
@@ -154,39 +155,111 @@ void load_syntax(const std::string &file_ext)
             int attr = A_NORMAL;
             if (attr_name.find("COLOR_RED") != std::string::npos)
                 attr = COLOR_PAIR(1) | A_BOLD;
+            else if (attr_name.find("COLOR_GREEN") != std::string::npos)
+                attr = COLOR_PAIR(2);
             else if (attr_name.find("COLOR_BLUE") != std::string::npos)
                 attr = COLOR_PAIR(4) | A_BOLD;
             else if (attr_name.find("COLOR_ORANGE") != std::string::npos)
                 attr = COLOR_PAIR(5) | A_BOLD;
 
-            std::string words_part = line.substr(open_brace + 1, close_brace - open_brace - 1);
-            std::stringstream ss(words_part);
-            std::string word;
-            while (ss >> word)
+            std::string content = line.substr(open_brace + 1, close_brace - open_brace - 1);
+
+            if (is_ml)
             {
-                if (word == "\"")
+                std::string s_del, e_del;
+                size_t s_pos = content.find("start:");
+                size_t e_pos = content.find("end:");
+
+                if (s_pos != std::string::npos && e_pos != std::string::npos)
                 {
-                    special_rules.push_back({"\"", "\"", attr, false});
+                    s_del = content.substr(s_pos + 6, e_pos - (s_pos + 6));
+                    e_del = content.substr(e_pos + 4);
                 }
                 else
                 {
-                    syntax_map[word] = attr;
+                    std::stringstream ss(content);
+                    ss >> s_del;
+                    e_del = s_del;
                 }
-                bool is_special = false;
-                for (auto &rule : special_rules)
+                auto trim = [](std::string &s)
                 {
-                    if (rule.start == word)
-                    {
-                        rule.attr = attr;
-                        is_special = true;
-                    }
+                    s.erase(0, s.find_first_not_of(" "));
+                    s.erase(s.find_last_not_of(" ") + 1);
+                };
+                trim(s_del);
+                trim(e_del);
+
+                special_rules.push_back({s_del, e_del, attr, true, is_cmt});
+            }
+            else
+            {
+                std::stringstream ss(content);
+                std::string word;
+                while (ss >> word)
+                {
+                    syntax_map[word] = attr;
                 }
             }
         }
     }
+    special_rules.push_back({"\"", "\"", COLOR_PAIR(5), false, false});
+    special_rules.push_back({"'", "'", COLOR_PAIR(5), false, false});
     special_rules.push_back({"//", "\n", COLOR_PAIR(2), false});
     special_rules.push_back({"#", "\n", COLOR_PAIR(2), false});
     special_rules.push_back({"--", "\n", COLOR_PAIR(2), false});
+}
+
+void rfind(std::string word)
+{
+    if (word.empty())
+        return;
+    for (int y = cursor_y; y < (int)lines.size(); ++y)
+    {
+        size_t start_x = (y == cursor_y) ? cursor_x + 1 : 0;
+        size_t found = lines[y].find(word, start_x);
+
+        if (found != std::string::npos)
+        {
+            cursor_y = y;
+            cursor_x = (int)found;
+            render_editor();
+            return;
+        }
+    }
+    for (int y = 0; y <= cursor_y; ++y)
+    {
+        size_t found = lines[y].find(word);
+        if (found != std::string::npos)
+        {
+            cursor_y = y;
+            cursor_x = (int)found;
+            render_editor();
+            return;
+        }
+    }
+}
+
+void rreplace(std::string current_word, std::string new_word)
+{
+    if (current_word.empty())
+        return;
+    bool changed = false;
+    record_state();
+    for (int y = 0; y < (int)lines.size(); ++y)
+    {
+        size_t pos = 0;
+        while ((pos = lines[y].find(current_word, pos)) != std::string::npos)
+        {
+            lines[y].replace(pos, current_word.length(), new_word);
+            pos += new_word.length();
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        render_editor();
+    }
 }
 
 void statusbar()
@@ -214,37 +287,37 @@ void cmdbar()
     getmaxyx(stdscr, max_y, max_x);
     move(max_y - 1, 0);
     clrtoeol();
-    printw("> ");
+    printw("%s", promptt.c_str());
     echo();
     curs_set(1);
     char buffer[256];
     getnstr(buffer, sizeof(buffer) - 1);
-    std::string full_input(buffer);
     noecho();
+    std::string full_input(buffer);
     if (full_input.empty())
         return;
-    std::string cmd;
-    std::string args;
-    size_t space_pos = full_input.find(' ');
-    if (space_pos != std::string::npos)
+    std::vector<std::string> cmd_argv;
+    std::stringstream ss(full_input);
+    std::string temp;
+    while (ss >> temp)
     {
-        cmd = full_input.substr(0, space_pos);
-        args = full_input.substr(space_pos + 1);
+        cmd_argv.push_back(temp);
     }
-    else
-    {
-        cmd = full_input;
-    }
+
+    if (cmd_argv.empty())
+        return;
+
+    std::string cmd = cmd_argv[0];
+
     if (cmd == "quit" || cmd == "q")
     {
         running = false;
     }
     else if (cmd == "save" || cmd == "sv")
     {
-        if (!args.empty())
+        if (cmd_argv.size() > 1)
         {
-            changefilename(args);
-            overwrite_file();
+            changefilename(cmd_argv[1]);
             overwrite_file();
         }
         else
@@ -254,12 +327,15 @@ void cmdbar()
     }
     else if (cmd == "load" || cmd == "ld")
     {
-        load_file(args);
+        if (cmd_argv.size() > 1)
+        {
+            load_file(cmd_argv[1]);
+        }
     }
     else if (cmd == "name")
     {
-        if (!args.empty())
-            changefilename(args);
+        if (cmd_argv.size() > 1)
+            changefilename(cmd_argv[1]);
     }
     else if (cmd == "overwrite" || cmd == "ow" || cmd == "w")
     {
@@ -272,11 +348,11 @@ void cmdbar()
     }
     else if (cmd == "gotoy" || cmd == "y" || cmd == "line")
     {
-        if (!args.empty())
+        if (cmd_argv.size() > 1)
         {
             try
             {
-                int target_y = std::stoi(args) - 1;
+                int target_y = std::stoi(cmd_argv[1]) - 1;
                 cursor_y = std::max(0, std::min(target_y, (int)lines.size() - 1));
                 cursor_x = std::min(cursor_x, (int)lines[cursor_y].length());
             }
@@ -287,17 +363,33 @@ void cmdbar()
     }
     else if (cmd == "gotox" || cmd == "x")
     {
-        if (!args.empty())
+        if (cmd_argv.size() > 1)
         {
             try
             {
-                int target_x = std::stoi(args);
+                int target_x = std::stoi(cmd_argv[1]);
                 cursor_x = std::max(0, std::min(target_x, (int)lines[cursor_y].length()));
             }
             catch (...)
             {
             }
         }
+    }
+    else if (cmd == "find" || cmd == "grep" || cmd == "f")
+    {
+        rfind(cmd_argv[1]);
+    }
+    else if (cmd == "replace" || cmd == "rep" || cmd == "r")
+    {
+        rreplace(cmd_argv[1], cmd_argv[2]);
+    }
+    else if (cmd == "prompt" || cmd == "p")
+    {
+        promptt = cmd_argv[1];
+    }
+    else if (cmd == "tabsize" || cmd == "tab" || cmd == "t")
+    {
+        tabsize = std::stoi(cmd_argv[1]);
     }
     render_editor();
 }
@@ -360,6 +452,16 @@ std::string get_key()
     return "UNKNOWN";
 }
 
+std::string getleadingwhitespace(const std::string &line)
+{
+    size_t first_non_space = line.find_first_not_of(" \t");
+    if (first_non_space == std::string::npos)
+    {
+        return "";
+    }
+    return line.substr(0, first_non_space);
+}
+
 void render_editor()
 {
     check_resize();
@@ -380,9 +482,11 @@ void render_editor()
 
     int global_attr = -1;
     std::string active_closer = "";
+    SR *current_active_rule = nullptr;
     for (int i = 0; i < EDIT_HEIGHT; ++i)
     {
         int line_index = scroll_y + i;
+
         if (line_index >= (int)lines.size())
         {
             attron(COLOR_PAIR(3));
@@ -399,6 +503,62 @@ void render_editor()
         for (int x = 0; x < (int)line.length(); ++x)
         {
             int disp_x = x - scroll_x;
+            if (current_active_rule)
+            {
+                if (line.substr(x, current_active_rule->end.length()) == current_active_rule->end)
+                {
+                    attron(current_active_rule->attr);
+                    if (disp_x >= 0 && disp_x < max_x - LINE_NUM_WIDTH)
+                        mvaddch(i, disp_x + LINE_NUM_WIDTH, line[x]);
+                    attroff(current_active_rule->attr);
+                    if (current_active_rule->end.length() > 1)
+                        x += current_active_rule->end.length() - 1;
+                    current_active_rule = nullptr;
+                    continue;
+                }
+                attron(current_active_rule->attr);
+                if (disp_x >= 0 && disp_x < max_x - LINE_NUM_WIDTH)
+                    mvaddch(i, disp_x + LINE_NUM_WIDTH, line[x]);
+                attroff(current_active_rule->attr);
+                continue;
+            }
+            bool rule_found = false;
+            for (auto &rule : special_rules)
+            {
+                if (line.substr(x, rule.start.length()) == rule.start)
+                {
+                    if (rule.end == "\n")
+                    {
+                        attron(rule.attr);
+                        for (int rem = x; rem < (int)line.length(); ++rem)
+                        {
+                            int r_disp = rem - scroll_x;
+                            if (r_disp >= 0 && r_disp < max_x - LINE_NUM_WIDTH)
+                                mvaddch(i, r_disp + LINE_NUM_WIDTH, line[rem]);
+                        }
+                        attroff(rule.attr);
+                        x = line.length();
+                        rule_found = true;
+                        break;
+                    }
+                    if (rule.multi_line || rule.end != "\n")
+                    {
+                        current_active_rule = &rule;
+                    }
+
+                    attron(rule.attr);
+                    if (disp_x >= 0 && disp_x < max_x - LINE_NUM_WIDTH)
+                        mvaddch(i, disp_x + LINE_NUM_WIDTH, line[x]);
+                    attroff(rule.attr);
+
+                    if (rule.start.length() > 1)
+                        x += rule.start.length() - 1;
+                    rule_found = true;
+                    break;
+                }
+            }
+            if (rule_found)
+                continue;
             if (!active_closer.empty())
             {
                 if (line.substr(x, active_closer.length()) == active_closer)
@@ -522,6 +682,12 @@ void render_editor()
             }
         next_char:;
         }
+        if (active_rule && !active_rule->multi_line)
+        {
+            active_rule = nullptr;
+        }
+        active_closer = "";
+        global_attr = -1;
         if (active_closer == "\n")
         {
             active_closer = "";
@@ -618,7 +784,7 @@ void save_file()
 }
 
 void changefilename(const std::string &new_name)
-{ // API for apps that embed mintext
+{
     if (!new_name.empty())
     {
         filename = new_name;
@@ -627,7 +793,7 @@ void changefilename(const std::string &new_name)
 }
 
 bool createfile()
-{ // API for apps that embed mintext
+{
     FILE *file = fopen(filename.c_str(), "w");
     if (file)
     {
@@ -828,11 +994,12 @@ void handle_key(const std::string &key)
     }
     else if (key == "ENTER")
     {
+        std::string indent = getleadingwhitespace(current_line_content);
         std::string text_after_cursor = current_line_content.substr(cursor_x);
         current_line_content.erase(cursor_x);
-        lines.insert(lines.begin() + cursor_y + 1, text_after_cursor);
+        lines.insert(lines.begin() + cursor_y + 1, indent + text_after_cursor);
         cursor_y++;
-        cursor_x = 0;
+        cursor_x = indent.length();
     }
     else if (key == "BACKSPACE")
     {
@@ -901,8 +1068,8 @@ void handle_key(const std::string &key)
     }
     else if (key == "TAB")
     {
-        current_line_content.insert(cursor_x, "    ");
-        cursor_x += 4;
+        current_line_content.insert(cursor_x, std::string(tabsize, ' '));
+        cursor_x += tabsize;
     }
     else if (key == "CTRL_Q")
     {
@@ -961,7 +1128,7 @@ void handle_key(const std::string &key)
                 sel_anchor_y = cursor_y;
                 sel_anchor_x = cursor_x;
             }
-            else if (event.bstate & REPORT_MOUSE_POSITION)
+            else if (event.bstate & (BUTTON1_PRESSED | REPORT_MOUSE_POSITION))
             {
                 if (is_selecting)
                 {
